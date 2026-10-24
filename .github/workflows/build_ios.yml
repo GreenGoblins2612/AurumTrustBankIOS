@@ -20,66 +20,128 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install System Build Tools via Homebrew
+      - name: Install System Build Tools
         run: |
           brew install autoconf automake libtool pkg-config cmake
 
-      - name: Install kivy-ios & Cython
+      - name: Install kivy-ios and Cython
         run: |
-          pip install --upgrade pip
-          pip install Cython==0.29.36 kivy-ios
+          python -m pip install --upgrade pip
+          python -m pip install Cython==0.29.36 kivy-ios
 
-      - name: Build Recipes for iOS
+      - name: Build iOS Recipes
         run: |
           toolchain build python3 kivy numpy matplotlib
 
-      - name: Prepare App Directory & Create Xcode Project
+      - name: Prepare App Source
         run: |
-          mkdir -p src_app
+          set -e
 
-          if [ -f "main.py" ]; then
-            cp main.py renderer_kivy.py "ATB EXPERIMENTAL.py" cour.ttf src_app/ 2>/dev/null || true
+          mkdir -p "$GITHUB_WORKSPACE/src_app"
 
-            if [ -d "Aurum_Trust_Bank" ]; then
-              cp -R Aurum_Trust_Bank src_app/
-            fi
-          else
-            APP_DIR=$(find . -name "main.py" \
-              -not -path "*/.*" \
-              -not -path "*src_app*" \
-              -exec dirname {} \; | head -n 1)
+          # Find the directory containing the real application entry point.
+          APP_DIR="$GITHUB_WORKSPACE"
 
-            if [ -z "$APP_DIR" ]; then
-              echo "Error: Could not find main.py"
+          if [ ! -f "$APP_DIR/main.py" ]; then
+            FOUND_MAIN=$(find "$GITHUB_WORKSPACE" \
+              -type f \
+              -name "main.py" \
+              -not -path "*/.git/*" \
+              -not -path "*/src_app/*" \
+              -not -path "*/site-packages/*" \
+              | head -n 1)
+
+            if [ -z "$FOUND_MAIN" ]; then
+              echo "ERROR: main.py not found in repository."
               exit 1
             fi
 
-            cp -R "$APP_DIR"/. src_app/
+            APP_DIR=$(dirname "$FOUND_MAIN")
           fi
 
-          echo "Files in src_app:"
-          ls -la src_app
+          echo "Using application source: $APP_DIR"
 
-          toolchain create AurumTrustBank src_app
+          # Copy the app files and assets without copying the Git repository.
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='src_app/' \
+            --exclude='*-ios/' \
+            "$APP_DIR/" "$GITHUB_WORKSPACE/src_app/"
 
-      - name: Package Xcode Project
-        run: |
-          PROJ_DIR=$(find . -maxdepth 1 -type d \
-            \( -name "*aurumtrustbank-ios*" -o -name "*AurumTrustBank-ios*" \) \
-            | head -n 1)
+          echo "Application files:"
+          find "$GITHUB_WORKSPACE/src_app" \
+            -maxdepth 3 -type f | sort | head -200
 
-          if [ -z "$PROJ_DIR" ]; then
-            echo "Error: Xcode project directory not found"
-            find . -maxdepth 3 -name "*.xcodeproj" -print
+          if [ ! -f "$GITHUB_WORKSPACE/src_app/main.py" ]; then
+            echo "ERROR: main.py missing from src_app."
             exit 1
           fi
 
-          echo "Found project: $PROJ_DIR"
-          zip -r AurumTrustBank-Xcode-Project.zip "$PROJ_DIR"
+          if [ -f "$GITHUB_WORKSPACE/src_app/renderer_kivy.py" ]; then
+            echo "Kivy renderer found."
+          else
+            echo "WARNING: renderer_kivy.py not found."
+          fi
 
-      - name: Upload Xcode Project Artifact
+      - name: Create Xcode Project
+        run: |
+          set -e
+
+          cd "$RUNNER_TEMP"
+
+          toolchain create AurumTrustBank \
+            "$GITHUB_WORKSPACE/src_app"
+
+          # Locate the generated project directory.
+          PROJ_DIR=$(find "$RUNNER_TEMP" \
+            -maxdepth 2 -type d \
+            -name "*aurumtrustbank-ios*" \
+            | head -n 1)
+
+          if [ -z "$PROJ_DIR" ]; then
+            PROJ_DIR=$(find "$RUNNER_TEMP" \
+              -maxdepth 2 -type d \
+              -name "*AurumTrustBank-ios*" \
+              | head -n 1)
+          fi
+
+          if [ -z "$PROJ_DIR" ]; then
+            echo "ERROR: Generated Xcode project directory not found."
+            find "$RUNNER_TEMP" -maxdepth 4 \
+              -name "*.xcodeproj" -print
+            exit 1
+          fi
+
+          echo "Generated project: $PROJ_DIR"
+
+          # Confirm that an Xcode project exists before packaging.
+          XCODEPROJ=$(find "$PROJ_DIR" \
+            -maxdepth 3 -name "*.xcodeproj" -print -quit)
+
+          if [ -z "$XCODEPROJ" ]; then
+            echo "ERROR: No .xcodeproj found in generated directory."
+            exit 1
+          fi
+
+          cp -R "$PROJ_DIR" \
+            "$GITHUB_WORKSPACE/AurumTrustBank-Xcode-Project"
+
+      - name: Package Xcode Project ZIP
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+
+          zip -r AurumTrustBank-Xcode-Project.zip \
+            AurumTrustBank-Xcode-Project
+
+          test -s AurumTrustBank-Xcode-Project.zip
+          echo "Xcode project ZIP created successfully."
+
+      - name: Upload Xcode Project
         uses: actions/upload-artifact@v4
         with:
           name: AurumTrustBank-Xcode-Project
           path: AurumTrustBank-Xcode-Project.zip
+          if-no-files-found: error
           retention-days: 14
