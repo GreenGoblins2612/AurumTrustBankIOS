@@ -1,4 +1,4 @@
-name: Build iOS Xcode Project (kivy-ios)
+name: Build iOS IPA (kivy-ios)
 
 on:
   push:
@@ -29,21 +29,45 @@ jobs:
           pip install --upgrade pip
           pip install Cython==0.29.36 kivy-ios
 
+      # Build required native recipes for iOS
       - name: Build Recipes for iOS
         run: |
-          toolchain build python3 kivy
+          toolchain build python3 kivy sqlite3 numpy matplotlib
 
-      - name: Create Xcode Project
+      # Automatically detect where main.py is and create the Xcode project
+      - name: Locate Source Directory & Create Xcode Project
         run: |
-          toolchain create AurumTrustBank ios_project
+          SRC_DIR="."
+          if [ ! -f "$SRC_DIR/main.py" ]; then
+            SRC_DIR=$(find . -name "main.py" -not -path "*/.*" -exec dirname {} \; | head -n 1)
+          fi
+          echo "Found source directory: $SRC_DIR"
+          toolchain create AurumTrustBank "$SRC_DIR"
 
-      - name: Zip Xcode Project for Download
+      # Compile Xcode project to an iOS Application Bundle
+      - name: Build Xcode Project
         run: |
-          zip -r AurumTrustBank-Xcode.zip AurumTrustBank-ios
+          cd AurumTrustBank-ios
+          xcodebuild clean build \
+            -project aurumtrustbank.xcodeproj \
+            -scheme aurumtrustbank \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
-      - name: Upload Xcode Project Artifact
+      # Package the compiled .app into an installable .ipa
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -r AurumTrustBank-ios/build/Release-iphoneos/aurumtrustbank.app Payload/
+          zip -r AurumTrustBank.ipa Payload
+
+      # Upload the final IPA
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AurumTrustBank-Xcode-Project
-          path: AurumTrustBank-Xcode.zip
+          name: AurumTrustBank-IPA
+          path: AurumTrustBank.ipa
           retention-days: 14
