@@ -1,4 +1,5 @@
-name: Build iOS IPA (kivy-ios)
+
+name: Build iOS Xcode Project (kivy-ios)
 
 on:
   push:
@@ -34,7 +35,7 @@ jobs:
         run: |
           toolchain build python3 kivy numpy matplotlib
 
-      # Copy Python files into clean src_app to avoid 3GB rsync recursion loop
+      # Prepare app directory and create Xcode project
       - name: Prepare Clean App Directory & Create Xcode Project
         run: |
           mkdir -p src_app
@@ -48,10 +49,15 @@ jobs:
           ls -la src_app
           toolchain create AurumTrustBank src_app
 
-      # Compile Xcode project to an iOS Application Bundle
+      # Compile Xcode project
       - name: Build Xcode Project
         run: |
-          PROJ_DIR=$(find . -maxdepth 1 -type d -name "*aurumtrustbank-ios*" -o -name "*AurumTrustBank-ios*" | head -n 1)
+          PROJ_DIR=$(find . -maxdepth 1 -type d \( -name "*aurumtrustbank-ios*" -o -name "*AurumTrustBank-ios*" \) | head -n 1)
+          if [ -z "$PROJ_DIR" ]; then
+            echo "Error: Could not locate generated Xcode project"
+            find . -maxdepth 3 -name "*.xcodeproj" -print
+            exit 1
+          fi
           cd "$PROJ_DIR"
           xcodebuild clean build \
             -project aurumtrustbank.xcodeproj \
@@ -64,24 +70,25 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO
 
-      # Package the compiled .app into an installable .ipa
-      - name: Package IPA
+      # Package the Xcode project instead of an IPA
+      - name: Package Xcode Project
         run: |
-          mkdir -p Payload
-          # Search both current workspace and Xcode DerivedData
-          APP_PATH=$(find . ~/Library/Developer/Xcode/DerivedData -name "*.app" -type d 2>/dev/null | head -n 1)
-          echo "Found compiled app at: $APP_PATH"
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: Could not locate compiled .app bundle"
+          PROJ_DIR=$(find . -maxdepth 1 -type d \( -name "*aurumtrustbank-ios*" -o -name "*AurumTrustBank-ios*" \) | head -n 1)
+
+          if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR/aurumtrustbank.xcodeproj" ]; then
+            echo "Error: Xcode project directory not found"
             exit 1
           fi
-          cp -r "$APP_PATH" Payload/
-          zip -r AurumTrustBank.ipa Payload
 
-      # Upload the final IPA
-      - name: Upload IPA Artifact
+          PROJECT_NAME=$(basename "$PROJ_DIR")
+          zip -r "$GITHUB_WORKSPACE/AurumTrustBank-Xcode-Project.zip" "$PROJ_DIR" \
+            -x "$PROJ_DIR/build/*" \
+            -x "*/.git/*"
+
+      # Upload the Xcode project
+      - name: Upload Xcode Project Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AurumTrustBank-IPA
-          path: AurumTrustBank.ipa
+          name: AurumTrustBank-Xcode-Project
+          path: AurumTrustBank-Xcode-Project.zip
           retention-days: 14
