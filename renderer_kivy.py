@@ -51,6 +51,8 @@ except ImportError as e:
 
 # Register cross-platform monospace font in Kivy
 MONO_FONT_CANDIDATES = [
+    "/System/Library/Fonts/Core/Courier.ttc",
+    "/System/Library/Fonts/Core/Menlo.ttc",
     "/System/Library/Fonts/Supplemental/Courier New.ttf",
     "/System/Library/Fonts/Monaco.ttf",
     "/System/Library/Fonts/SFNSMono.ttf",
@@ -157,6 +159,7 @@ def patch_matplotlib_for_kivy(app):
     3. Blocks the worker thread while showing the popup so the script doesn't race ahead.
     """
     try:
+        os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
         import matplotlib
         matplotlib.use("Agg")  # CRITICAL: Headless backend prevents desktop window crash on mobile
         import matplotlib.pyplot as plt

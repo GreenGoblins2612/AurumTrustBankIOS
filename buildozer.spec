@@ -19,7 +19,7 @@ source.include_exts = py,png,jpg,kv,atlas,ttf,db
 version = 1.0.0
 
 # (list) Application requirements for iOS
-requirements = python3,kivy,sqlite3,numpy,matplotlib,pandas,requests,filetype
+requirements = python3,kivy,sqlite3,numpy,matplotlib
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait

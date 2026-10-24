@@ -1,16 +1,167 @@
 #NOTE: USE COURIER NEW AS FONT
 #Importing libraries
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as pl
+import os
+import shutil
+import csv
+import sys
 import math
 import sqlite3
+import random
 from datetime import datetime, timedelta
-import sys
 
-#Connector for mysql
-con=sqlite3.connect(database='Aurum_Trust_Bank')
-cur=con.cursor()
+# Pure-Python Pandas Replacement (Zero external C-dependency for iOS)
+class _PureSeries:
+    def __init__(self, data=None, name=None):
+        self.data = list(data) if data is not None else []
+        self.name = name
+
+    @property
+    def empty(self):
+        return len(self.data) == 0
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+    def __eq__(self, other):
+        return [x == other for x in self.data]
+
+    @property
+    def iloc(self):
+        return self
+
+    def __str__(self):
+        return str(self.data)
+
+class _PureRowAccessor:
+    def __init__(self, row_dict):
+        self._d = row_dict
+    def __getitem__(self, key):
+        return self._d.get(key)
+    def loc(self, key):
+        return self._d.get(key)
+    @property
+    def loc(self):
+        return self
+    def __str__(self):
+        return '\n'.join(f"{k:20}: {v}" for k, v in self._d.items())
+
+class _PureDataFrame:
+    def __init__(self, data=None, columns=None, index=None):
+        self.columns = list(columns) if columns else []
+        self._rows = []
+        if data:
+            for r in data:
+                if isinstance(r, (list, tuple)):
+                    row_dict = {col: val for col, val in zip(self.columns, r)}
+                elif isinstance(r, dict):
+                    row_dict = r
+                else:
+                    row_dict = {}
+                self._rows.append(row_dict)
+
+    def __len__(self):
+        return len(self._rows)
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            vals = [r.get(key) for r in self._rows]
+            return _PureSeries(vals, name=key)
+        elif isinstance(key, list) and (not key or isinstance(key[0], bool)):
+            filtered = [r for r, m in zip(self._rows, key) if m]
+            df = _PureDataFrame(columns=self.columns)
+            df._rows = filtered
+            return df
+        raise KeyError(key)
+
+    @property
+    def iloc(self):
+        class _ILocIndexer:
+            def __init__(self, df):
+                self.df = df
+            def __getitem__(self, idx):
+                return _PureRowAccessor(self.df._rows[idx])
+        return _ILocIndexer(self)
+
+    def head(self, n=5):
+        df = _PureDataFrame(columns=self.columns)
+        df._rows = self._rows[:n]
+        return df
+
+    def to_csv(self, filepath, index=False):
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(self.columns)
+            for r in self._rows:
+                writer.writerow([r.get(c) for c in self.columns])
+
+    def __str__(self):
+        if not self._rows:
+            return "Empty DataFrame"
+        col_w = {c: max(len(str(c)), max((len(str(r.get(c, ''))) for r in self._rows), default=0)) for c in self.columns}
+        header = "  ".join(str(c).ljust(col_w[c]) for c in self.columns)
+        sep = "  ".join("-" * col_w[c] for c in self.columns)
+        row_strs = ["  ".join(str(r.get(c, '')).ljust(col_w[c]) for c in self.columns) for r in self._rows]
+        return "\n".join([header, sep] + row_strs)
+
+class _PandasModule:
+    Series = _PureSeries
+    DataFrame = _PureDataFrame
+
+# Drop-in replacement for pandas
+pd = _PandasModule()
+
+# Resilient NumPy import with fallback
+try:
+    import numpy as np
+except ImportError:
+    class _NumPyFallback:
+        class random:
+            @staticmethod
+            def randint(a, b):
+                return random.randint(a, b - 1)
+        @staticmethod
+        def arange(start, stop, step=1):
+            return list(range(start, stop, step))
+    np = _NumPyFallback()
+
+# Resilient Matplotlib import with headless backend
+try:
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as pl
+except Exception:
+    class _MockPlot:
+        def __getattr__(self, name):
+            def _dummy(*args, **kwargs):
+                pass
+            return _dummy
+    pl = _MockPlot()
+
+def get_writable_path(filename):
+    """Returns a writable destination on iOS devices (~/Documents) or local directory on desktop."""
+    docs_dir = os.path.expanduser("~/Documents")
+    if os.path.exists(docs_dir) and os.access(docs_dir, os.W_OK):
+        return os.path.join(docs_dir, filename)
+    base_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
+    return os.path.join(base_dir, filename)
+
+# iOS Database Setup: Copy from read-only app bundle to writable Documents if needed
+_bundle_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Aurum_Trust_Bank") if "__file__" in globals() else "Aurum_Trust_Bank"
+_writable_db = get_writable_path("Aurum_Trust_Bank")
+
+if os.path.abspath(_bundle_db) != os.path.abspath(_writable_db) and os.path.exists(_bundle_db) and not os.path.exists(_writable_db):
+    try:
+        shutil.copyfile(_bundle_db, _writable_db)
+    except Exception as _e:
+        print(f"Notice: database initialization in Documents folder: {_e}")
+
+_db_target = _writable_db if os.path.exists(_writable_db) else _bundle_db
+con = sqlite3.connect(database=_db_target)
+cur = con.cursor()
 
 #TABLES SETUP
 cur.execute("""
@@ -710,10 +861,10 @@ if login_factor:        #checking if user logged in!
                     print("Here is the graph!")
                     print()
                 elif ch_for_graph==3:
-                    print("You have choosen to download your TXN history!")
-                    TXN_History_Table.to_csv("Transaction history of "+str(accno)+".csv",index=False)
-                    print("Your history has been downloaded!")
-                    print("(Note: it is downloaded where this python file is downloaded!)")
+                    print("You have chosen to download your TXN history!")
+                    _csv_file = get_writable_path("Transaction history of " + str(accno) + ".csv")
+                    TXN_History_Table.to_csv(_csv_file, index=False)
+                    print(f"Your history has been downloaded to:\n{_csv_file}")
                 else:
                     break
         #FD Calculator (Fixed Deposit)
