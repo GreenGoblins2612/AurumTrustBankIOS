@@ -337,30 +337,56 @@ class KivyTerminalApp(App):
 
         builtins.input = custom_input
 
+        target_dir = os.path.dirname(os.path.abspath(__file__))
+        source_path = os.path.join(target_dir, "ATB EXPERIMENTAL.py")
+        bytecode_path = os.path.join(target_dir, "ATB EXPERIMENTAL.pyc")
+
         try:
-            target_file = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "ATB EXPERIMENTAL.py"
-            )
-            if not os.path.isfile(target_file):
+            script_globals = {
+                "__name__": "__main__",
+                "__file__": source_path,
+                "input": custom_input,
+            }
+
+            if os.path.isfile(source_path):
+                # Development builds may include the original source file.
+                with open(source_path, "r", encoding="utf-8") as source:
+                    code = compile(source.read(), source_path, "exec")
+            elif os.path.isfile(bytecode_path):
+                # kivy-ios can package Python files as .pyc bytecode.
+                # Load the bytecode through Python's supported loader rather
+                # than assuming the original .py file remains in the bundle.
+                from importlib.machinery import SourcelessFileLoader
+                loader = SourcelessFileLoader("aurum_atb_entry", bytecode_path)
+                code = loader.get_code("aurum_atb_entry")
+                if code is None:
+                    raise ImportError("Could not load ATB EXPERIMENTAL.pyc")
+                script_globals["__file__"] = bytecode_path
+            else:
+                available = sorted(
+                    name for name in os.listdir(target_dir)
+                    if name.startswith("ATB EXPERIMENTAL")
+                )
                 self.queue_output(
-                    "\nError: Could not find 'ATB EXPERIMENTAL.py'\n"
+                    "\nError: Could not find the bank program.\n"
+                    "Looked for ATB EXPERIMENTAL.py and ATB EXPERIMENTAL.pyc.\n"
+                    f"Matching bundled files: {available or 'none'}\n"
                 )
                 return
 
-            with open(target_file, "r", encoding="utf-8") as source:
-                code = source.read()
-
-            script_globals = {
-                "__name__": "__main__",
-                "__file__": target_file,
-                "input": custom_input,
-            }
-            exec(compile(code, target_file, "exec"), script_globals)
+            exec(code, script_globals)
 
         except Exception:
             import traceback
             self.queue_output("\n" + traceback.format_exc() + "\n")
+        finally:
+            # Keep the final message visible. The user explicitly presses
+            # Return in the input bar to close the app; never stop on logout.
+            self.queue_output(
+                "\n\nPress Return when you're ready to close Aurum Trust Bank.\n"
+            )
+            self.input_queue.get()
+            Clock.schedule_once(lambda dt: self.stop(), 0)
 
 
 if __name__ == "__main__":
