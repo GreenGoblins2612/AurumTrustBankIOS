@@ -32,7 +32,7 @@ jobs:
       # Build required native recipes for iOS
       - name: Build Recipes for iOS
         run: |
-          toolchain build python3 kivy sqlite3 numpy matplotlib
+          toolchain build python3 kivy numpy matplotlib
 
       # Automatically detect where main.py is and create the Xcode project
       - name: Locate Source Directory & Create Xcode Project
