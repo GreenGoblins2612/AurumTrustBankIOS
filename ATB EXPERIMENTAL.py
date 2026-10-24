@@ -1691,7 +1691,7 @@ if login_factor:        #checking if user logged in!
             print()
             print()
             print("Aryan And Utkarsh are the founders of Aurum Trust Bank!")
-            sys.exit()
+            break
         print()
 else:
     if(admin_login==False) and accs_list:           # if there is account + too many attempts!
