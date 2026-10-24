@@ -40,29 +40,18 @@ except ImportError as exc:
     sys.exit(1)
 
 
-# Use a monospace font if one is available in the packaged app.
-# On iOS/Android, include a .ttf in the app and add its path here
-# for guaranteed monospace rendering across devices.
-MONO_FONT_CANDIDATES = [
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "DejaVuSansMono.ttf"),
-    "/system/fonts/RobotoMono-Regular.ttf",
-    "/system/fonts/DroidSansMono.ttf",
-    "/System/Library/Fonts/Supplemental/Courier New.ttf",
-    "/System/Library/Fonts/Monaco.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-    "C:\\Windows\\Fonts\\consola.ttf",
-    "C:\\Windows\\Fonts\\cour.ttf",
-]
-
-MONO_FONT_NAME = "Roboto"
-for font_path in MONO_FONT_CANDIDATES:
-    if os.path.isfile(font_path):
-        try:
-            LabelBase.register(name="TerminalMono", fn_regular=font_path)
-            MONO_FONT_NAME = "TerminalMono"
-            break
-        except Exception:
-            continue
+# Bundle the actual Courier New font with the app so the ASCII table
+# characters have consistent widths on iOS, independent of system fonts.
+COURIER_NEW_FONT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "cour.ttf"
+)
+MONO_FONT_NAME = "CourierNew"
+if os.path.isfile(COURIER_NEW_FONT):
+    LabelBase.register(name=MONO_FONT_NAME, fn_regular=COURIER_NEW_FONT)
+else:
+    # Keep a clear diagnostic rather than silently pretending Courier New loaded.
+    print(f"WARNING: Courier New font file not found: {COURIER_NEW_FONT}")
+    MONO_FONT_NAME = "Roboto"
 
 
 class StdioRedirector:
